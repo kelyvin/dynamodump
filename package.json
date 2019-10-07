@@ -28,7 +28,7 @@
     "dynamodump": "cli.js"
   },
   "engines": {
-    "node": ">=4"
+    "node": ">=8"
   },
   "dependencies": {
     "JSONStream": "^1.1.4",
