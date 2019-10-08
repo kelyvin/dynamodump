@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const path = require('path')
 const meow = require('meow');
 const AWS = require('aws-sdk');
 const bluebird = require('bluebird');
@@ -74,18 +75,17 @@ bluebird.resolve(method.call(undefined, cli))
     process.exit(1);
   });
 
-const dynamoDb = new AWS.DynamoDB({
-  region: cli.flags.region,
-  ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
-})
-
-
-function listTablesCli() {
-  return listTables()
+function listTablesCli(cli) {
+  return listTables(cli)
     .then(tables => console.log(tables.join(' ')));
 }
 
-function listTables() {
+function listTables(cli) {
+  const dynamoDb = new AWS.DynamoDB({
+    region: cli.flags.region,
+    ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
+  })
+
   const params = {};
 
   let tables = [];
@@ -113,24 +113,29 @@ function exportSchemaCli(cli) {
     cli.showHelp();
   }
 
-  return exportSchema(tableName, cli.flags.path, cli.flags.file)
+  return exportSchema(tableName, cli)
 }
 
 function exportAllSchemaCli(cli) {
-  const path = cli.flags.path;
-
-  return bluebird.map(listTables(), tableName => {
+  return bluebird.map(listTables(cli), tableName => {
     console.error(`Exporting ${tableName}`);
-    return exportSchema(tableName, path, null);
+    return exportSchema(tableName, cli);
   }, { concurrency: 1 });
 }
 
-function exportSchema(tableName, path, file) {
+function exportSchema(tableName, cli) {
+  const filepath = cli.flags.path || ''
+  const file = cli.flags.file
+  const dynamoDb = new AWS.DynamoDB({
+    region: cli.flags.region,
+    ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
+  })
+
   return dynamoDb.describeTable({ TableName: tableName }).promise()
     .then(data => {
       const table = data.Table;
-      const file2 = file || `${path}${sanitizeFilename(tableName + '.dynamoschema')}`;
-
+      const file2 = (file) ? path.join(filepath, file) : path.join(filepath, sanitizeFilename(`${tableName}.dynamoschema`));
+      console.log(file2)
       return fs.writeFileAsync(file2, JSON.stringify(table, null, 2))
     });
 }
@@ -144,6 +149,11 @@ function importSchemaCli(cli) {
     console.error('--file is requred')
     cli.showHelp();
   }
+
+  const dynamoDb = new AWS.DynamoDB({
+    region: cli.flags.region,
+    ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
+  })
 
   const doWaitForActive = () => promisePoller({
     taskFn: () => {
@@ -224,6 +234,11 @@ function importDataCli(cli) {
     }
   }
 
+  const dynamoDb = new AWS.DynamoDB({
+    region: cli.flags.region,
+    ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
+  })
+
   const readStream = fs.createReadStream(file);
   const parseStream = JSONStream.parse('*');
 
@@ -262,20 +277,25 @@ function exportDataCli(cli) {
     cli.showHelp();
   }
 
-  return exportData(tableName, cli.flags.path, cli.flags.file);
+  return exportData(tableName, cli);
 }
 
 function exportAllDataCli(cli) {
-  const path = cli.flags.path;
-
-  return bluebird.map(listTables(), tableName => {
+  return bluebird.map(listTables(cli), tableName => {
     console.error(`Exporting ${tableName}`);
-    return exportData(tableName, path, null);
+    return exportData(tableName, cli);
   }, { concurrency: 1 });
 }
 
-function exportData(tableName, path, file) {
-  const file2 = file || `${path}${sanitizeFilename(tableName + '.dynamodata')}`;
+function exportData(tableName, cli) {
+  const dynamoDb = new AWS.DynamoDB({
+    region: cli.flags.region,
+    ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
+  })
+  const filepath = cli.flags.path || ''
+  const file = cli.flags.file
+  const file2 = (file) ? path.join(filepath, file) : path.join(filepath, sanitizeFilename(`${tableName}.dynamodata`));
+  console.log(file2)
   const writeStream = fs.createWriteStream(file2);
   const stringify = JSONStream.stringify();
   stringify.pipe(writeStream);
@@ -307,12 +327,10 @@ function exportData(tableName, path, file) {
 }
 
 function exportAllCli(cli) {
-  const path = cli.flags.path;
-
-  return bluebird.map(listTables(), tableName => {
+  return bluebird.map(listTables(cli), tableName => {
     console.error(`Exporting ${tableName}`);
-    return exportSchema(tableName, path, null)
-      .then(() => exportData(tableName, path, null))
+    return exportSchema(tableName, cli)
+      .then(() => exportData(tableName, cli))
   }, { concurrency: 1 });
 }
 
@@ -335,10 +353,14 @@ function wipeDataCli(cli) {
     }
   }
 
-  return wipeData(tableName, throughput);
+  return wipeData(tableName, cli, throughput);
 }
 
-function wipeData(tableName, throughput) {
+function wipeData(tableName, cli, throughput) {
+  const dynamoDb = new AWS.DynamoDB({
+    region: cli.flags.region,
+    ...(cli.flags.endpoint ? { endpoint: cli.flags.endpoint } : {})
+  })
   let n = 0;
 
   const params = {
