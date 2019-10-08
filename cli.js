@@ -135,7 +135,6 @@ function exportSchema(tableName, cli) {
     .then(data => {
       const table = data.Table;
       const file2 = (file) ? path.join(filepath, file) : path.join(filepath, sanitizeFilename(`${tableName}.dynamoschema`));
-      console.log(file2)
       return fs.writeFileAsync(file2, JSON.stringify(table, null, 2))
     });
 }
@@ -295,7 +294,6 @@ function exportData(tableName, cli) {
   const filepath = cli.flags.path || ''
   const file = cli.flags.file
   const file2 = (file) ? path.join(filepath, file) : path.join(filepath, sanitizeFilename(`${tableName}.dynamodata`));
-  console.log(file2)
   const writeStream = fs.createWriteStream(file2);
   const stringify = JSONStream.stringify();
   stringify.pipe(writeStream);
